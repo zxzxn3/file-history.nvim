@@ -2,7 +2,6 @@ local M = {}
 M.options = {
   max_width = 100, max_height = 30, -- Commit popup size limits, in cells.
   show_stat = true, -- Include changed files and insertion/deletion statistics.
-  index = true, -- Include a distinct stage-0 snapshot between the worktree and commits.
   history_signs = true, -- Compare single-window historical files with their preceding version.
 }
 local tickets = {}
@@ -117,7 +116,7 @@ local function display(context, buffer)
   return true
 end
 
--- Immutable snapshots: an index change gets a different name even when a previous view stays open.
+-- Read-only snapshots retain the original file identity for navigation and display.
 local function snapshot(context, revision, object, text)
   local name = 'history://' .. context.gitdir .. '//' .. object .. ':' .. context.path
   local buffer = vim.fn.bufnr(name)
@@ -137,35 +136,15 @@ local function snapshot(context, revision, object, text)
   return buffer
 end
 
--- A stage-0 blob is a navigation node only when its contents differ from HEAD.
-local function versions(context, callback)
-  git(context, { 'log', '--diff-filter=d', '--format=%H', '--', context.path }, function(output)
-    local commits = vim.split(vim.trim(output), '\n', { trimempty = true })
-    if not M.options.index then return callback(commits) end
-    git(context, { 'ls-files', '--stage', '-z', '--', context.path }, function(stages)
-      local blob = stages:match('^%d+ (%x+) 0\t')
-      if not blob then return callback(commits) end
-      local function finish(latest)
-        if blob ~= latest then table.insert(commits, 1, ':0') end
-        callback(commits, blob)
-      end
-      git(context, { 'ls-tree', '-z', 'HEAD', '--', context.path }, function(latest)
-        finish(latest:match('^%d+ blob (%x+)\t'))
-      end)
-    end)
-  end)
-end
-
 -- Switch only the focused window; working buffers retain their contents and lifecycle.
 function M.step(direction)
   assert(direction == 1 or direction == -1, 'direction must be 1 (older) or -1 (newer)')
   context_for(function(context)
-    versions(context, function(nodes, index_blob)
+    git(context, { 'log', '--diff-filter=d', '--format=%H', '--', context.path }, function(output)
+      local nodes = vim.split(vim.trim(output), '\n', { trimempty = true })
       local revision = context.revision
       local function select(commit)
         local position = commit and (vim.fn.index(nodes, commit) + 1) or 0
-        -- An index that now equals HEAD aliases the newest file commit.
-        if commit == ':0' and position == 0 then position = #nodes > 0 and 1 or 0 end
         if commit and position == 0 and #nodes > 0 then
           vim.notify('File history: revision is outside the current branch history', vim.log.levels.WARN)
           return
@@ -182,11 +161,9 @@ function M.step(direction)
           return
         end
         local hash = nodes[target]
-        local object = hash == ':0' and index_blob or hash .. ':' .. context.path
-        git(context, { 'show', object }, function(text)
+        git(context, { 'show', hash .. ':' .. context.path }, function(text)
           local function present(base)
-            local name = hash == ':0' and 'INDEX-' .. index_blob or hash
-            local buffer = snapshot(context, hash, name, text)
+            local buffer = snapshot(context, hash, hash, text)
             if display(context, buffer) then attach_history(buffer, context, base, vim.wo[context.win].diff) end
           end
           if nodes[target + 1] then present(nodes[target + 1])
@@ -197,9 +174,9 @@ function M.step(direction)
         end)
       end
       if not revision then select()
-      elseif revision == ':0' or vim.tbl_contains(nodes, revision) then select(revision)
+      elseif vim.tbl_contains(nodes, revision) then select(revision)
       elseif revision:sub(1, 1) == ':' then
-        vim.notify('File history: unmerged index stages are not supported', vim.log.levels.WARN)
+        vim.notify('File history: open a working file or committed revision first', vim.log.levels.WARN)
       else
         git(context, { 'log', '-1', '--diff-filter=d', '--format=%H', revision, '--', context.path },
           function(hash) select(vim.trim(hash)) end)
