@@ -4,6 +4,7 @@ M.options = {
   show_stat = true, -- Include changed files and insertion/deletion statistics.
   history_signs = true, -- Compare single-window historical files with their preceding version.
 }
+local gitsigns = require('gitsigns')
 local tickets = {}
 local function legacy_revision(name)
   local tail = name:match('^gitsigns://.-//(.+)$')
@@ -19,8 +20,6 @@ local function environment()
 end
 -- Let Gitsigns compare a read-only historical buffer with its preceding file version.
 local function attach_history(buf, context, base, in_diff)
-  local ok, gitsigns = pcall(require, 'gitsigns')
-  if not ok then return end
   gitsigns.detach(buf)
   if in_diff or not M.options.history_signs then return end
   gitsigns.attach({
@@ -45,50 +44,29 @@ local function git(context, args, callback)
   if not ok then vim.notify(tostring(err), vim.log.levels.ERROR) end
 end
 
--- Share repository identity between history navigation and commit details.
+-- Gitsigns supplies repository identity; revisions retain it after signs detach in diff mode.
 local function context_for(callback)
   local win, buffer = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()
+  local context = vim.b[buffer].file_history
+  local revision, path = legacy_revision(vim.api.nvim_buf_get_name(buffer))
+  if not context then
+    local status = vim.b[buffer].gitsigns_status_dict
+    if not status or not status.gitdir or not status.root then
+      vim.notify('File history: wait for Gitsigns to attach to this file', vim.log.levels.WARN)
+      return
+    end
+    path = path or vim.fs.relpath(status.root, vim.api.nvim_buf_get_name(buffer))
+    if not path then
+      vim.notify('File history: file is outside the attached worktree', vim.log.levels.WARN)
+      return
+    end
+    context = { gitdir = status.gitdir, root = status.root, path = path }
+  end
   tickets[win] = (tickets[win] or 0) + 1
-  local ticket = tickets[win]
-  local function ready(context)
-    if not vim.api.nvim_win_is_valid(win) or tickets[win] ~= ticket
-      or vim.api.nvim_win_get_buf(win) ~= buffer then return end
-    context = vim.deepcopy(context)
-    context.win, context.buffer, context.ticket = win, buffer, ticket
-    context.revision = vim.b[buffer].file_history_commit
-      or legacy_revision(vim.api.nvim_buf_get_name(buffer))
-    callback(context)
-  end
-  if vim.b[buffer].file_history then return ready(vim.b[buffer].file_history) end
-  local file = vim.api.nvim_buf_get_name(buffer)
-  local revision, path = legacy_revision(file)
-  if revision and M.options.context then
-    local context = M.options.context(buffer)
-    if context then context.path = path; return ready(context) end
-  end
-  if vim.bo[buffer].buftype ~= '' or vim.fn.filereadable(file) == 0 then
-    vim.notify('File history: open an existing working file', vim.log.levels.WARN)
-    return
-  end
-  vim.system({ 'git', '-C', vim.fs.dirname(file), 'rev-parse', '--absolute-git-dir', '--show-toplevel' },
-    { text = true, env = environment(), clear_env = true }, function(result)
-      vim.schedule(function()
-        if not vim.api.nvim_buf_is_valid(buffer) then return end
-        local context
-        if result.code == 0 then
-          local paths = vim.split(vim.trim(result.stdout), '\n')
-          context = { gitdir = paths[1], root = paths[2] }
-        elseif M.options.context then context = M.options.context(buffer) end
-        if context then
-          context.path = context.path or vim.fs.relpath(context.root, file)
-          if context.path then return ready(context) end
-        end
-        if vim.api.nvim_win_is_valid(win) and tickets[win] == ticket
-          and vim.api.nvim_win_get_buf(win) == buffer then
-          vim.notify('File history: no repository context for this file', vim.log.levels.WARN)
-        end
-      end)
-    end)
+  context = vim.deepcopy(context)
+  context.win, context.buffer, context.ticket = win, buffer, tickets[win]
+  context.revision = vim.b[buffer].file_history_commit or revision
+  callback(context)
 end
 
 -- Keep only visible buffers in Neovim's diff set when replacing a revision.
@@ -185,30 +163,36 @@ function M.step(direction)
   end)
 end
 
--- Open HEAD on the left and keep the invoking view on the right; each side navigates independently.
+-- Delegate split creation to Gitsigns; keep its read-only revisions navigable after detach.
 function M.diff()
   context_for(function(context)
-    git(context, { 'log', '-1', '--diff-filter=d', '--format=%H', '--', context.path }, function(output)
-      local hash = vim.trim(output)
-      if hash == '' then
-        vim.notify('File history: no committed version of this file', vim.log.levels.WARN)
-        return
-      end
-      git(context, { 'show', 'HEAD:' .. context.path }, function(text)
-        local buffer = snapshot(context, hash, hash, text)
-        vim.api.nvim_win_call(context.win, function()
-          vim.cmd('leftabove vsplit')
-          local left = vim.api.nvim_get_current_win()
-          if display({ win = left }, buffer) then
-            vim.cmd.diffthis()
-            vim.api.nvim_win_call(context.win, function() vim.cmd.diffthis() end)
-            local ok, gitsigns = pcall(require, 'gitsigns')
-            if ok then gitsigns.detach(buffer) end
-          end
+    local function open(err)
+      if err then vim.notify(tostring(err), vim.log.levels.ERROR); return end
+      if not vim.api.nvim_win_is_valid(context.win) or tickets[context.win] ~= context.ticket
+        or vim.api.nvim_win_get_buf(context.win) ~= context.buffer then return end
+      vim.api.nvim_win_call(context.win, function()
+        gitsigns.diffthis('HEAD', { vertical = true, split = 'aboveleft', unified = false }, function(error)
+          if error then vim.notify(tostring(error), vim.log.levels.ERROR); return end
+          vim.schedule(function()
+            if not vim.api.nvim_win_is_valid(context.win) then return end
+            for _, win in ipairs(vim.api.nvim_tabpage_list_wins(vim.api.nvim_win_get_tabpage(context.win))) do
+              local buffer = vim.api.nvim_win_get_buf(win)
+              local name = 'gitsigns://' .. context.gitdir .. '//HEAD:' .. context.path
+              if vim.wo[win].diff and vim.api.nvim_buf_get_name(buffer) == name then
+                vim.b[buffer].file_history = { gitdir = context.gitdir, root = context.root, path = context.path }
+                vim.b[buffer].file_history_commit = 'HEAD'
+                gitsigns.detach(buffer)
+              end
+            end
+          end)
         end)
-        if vim.api.nvim_win_is_valid(context.win) then vim.api.nvim_set_current_win(context.win) end
       end)
-    end)
+    end
+    if vim.b[context.buffer].file_history then
+      gitsigns.attach({ bufnr = context.buffer, force = true,
+        ctx = { file = context.path, gitdir = context.gitdir, toplevel = context.root,
+          base = context.revision } }, open)
+    else open() end
   end)
 end
 
