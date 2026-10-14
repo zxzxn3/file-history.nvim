@@ -18,20 +18,19 @@ For lazy.nvim, use `{ 'zxzxn3/file-history.nvim', dependencies = { { 'lewis6991/
 
 ## Options
 
-`setup()` accepts `max_width=100`, `max_height=30`, `show_stat=true`, and `history_signs=true`. Repository identity comes from Gitsigns' public buffer status. For bare dotfiles repositories, configure Gitsigns/baredot normally; no repository list or context callback is needed in this plugin. Git subprocesses clear inherited `GIT_*` variables and use the attached repository explicitly. If Gitsigns has not attached yet, navigation asks you to wait.
+`setup()` accepts `max_width=100`, `max_height=30`, `show_stat=true`, and `history_signs=true`. Repository identity comes from Gitsigns' public buffer status. For bare repositories, first ensure Gitsigns attaches to the file; an optional helper such as baredot can supply repository context, but is not required by this plugin. No repository list or context callback is needed here. Git subprocesses clear inherited `GIT_*` variables and use the attached repository explicitly. If Gitsigns has not attached yet, navigation asks you to wait.
 
 ## Navigation and diff
 
 Commands: `:FileHistoryOlder`, `:FileHistoryNewer`, `:FileHistoryDiff`, `:FileHistoryLog`. They mirror the Lua functions above.
 
 - Navigation order: working buffer → newest file commit → older file commits.
-- INDEX navigation is not part of the current master implementation.
+- INDEX navigation is not supported.
 - `diff()` delegates to Gitsigns' `diffthis('HEAD')`, opening HEAD on the left and retaining the invoking view on the right. `[v` / `]v` can navigate either side independently. Close either window with `:q`, or use `:diffoff!` to stop diff mode. Closing the worktree side leaves a clearly labeled read-only revision. As with Gitsigns, invoking diff again while already in diff mode does not create another split.
 - Historical signs compare against the next older file commit. Signs are suppressed while presenting a revision in diff mode.
-- `log()` shows metadata, message and colored diffstat; Index has no commit message. Working files use HEAD.
+- `log()` shows metadata, message and colored diffstat. Working files use HEAD.
 
 `label(buffer)` returns a display-only `[revision] filename` label, or nil. Use it in your statusline/tabline formatter; the plugin does not modify those plugins. Read-only revisions cannot be written, but consumers should also disable their own staging/reset shortcuts for buffers with `b:file_history` metadata.
 
 Historical buffers are wiped when hidden. Only commits touching the current path are navigated, deletion commits are skipped, and renames are not followed. Repositories must have a HEAD commit; unborn repositories and binary previews are outside the supported scope. `diff()` requires the file to exist in HEAD. Sessions cannot serialize their contents: discard empty `history://` placeholders after session restore, or navigate again to rehydrate them. Async results are ignored after the requesting window changes file/version. Rapid steps invalidate pending requests rather than accumulate a requested step count.
 
-The implementation was extracted from a personal configuration. The user reports that the independent tester found no major defects before these branch separations. The Gitsigns dependency refactor requires a new targeted runtime check.
