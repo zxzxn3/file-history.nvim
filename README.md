@@ -2,6 +2,12 @@
 
 Browse a file's Git versions in the focused Neovim window, without replacing its working buffer.
 
+![Browse file versions and inspect commit details](assets/history-navigation.gif)
+
+`[v` / `]v` browse older / newer versions; `<leader>hl` opens commit details and
+colored diffstat. The demo uses the example mappings below with Space as leader.
+Version labels use the plugin's `label()` helper in the tabline/statusline.
+
 Requires Neovim 0.12+, Git, and Gitsigns with the documented `attach(ctx)` and `b:gitsigns_status_dict` APIs. Configure Gitsigns before this plugin. No default keymaps, installation hooks, or background processes.
 
 ```lua
