@@ -103,3 +103,8 @@ vim.pack and lazy.nvim. Checks cover history navigation, independent diff views,
 unsaved edits, linked worktrees, and file-history edge cases.
 
 </details>
+
+## License
+
+Licensed under the GNU General Public License v3.0 only (GPL-3.0-only).
+See [LICENSE](LICENSE).

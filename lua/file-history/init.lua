@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: GPL-3.0-only
+-- Copyright (c) 2026 zxzx
+
 local M = {}
 M.options = {
   max_width = 100, max_height = 30, -- Commit popup size limits, in cells.
