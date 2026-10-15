@@ -8,6 +8,14 @@ Browse a file's Git versions in the focused Neovim window, without replacing its
 colored diffstat. The demo uses the example mappings below with Space as leader.
 Version labels use the plugin's `label()` helper in the tabline/statusline.
 
+![Navigate each side of a diff independently](assets/diff-navigation.gif)
+
+`<leader>hd` opens a diff against HEAD. Navigate each side independently with
+`[v` / `]v`: the demo takes the left side to the oldest version and back to the
+file version before HEAD, then takes the right side to the oldest version and
+back to the working file. The final `Space w q` is a custom window-close mapping
+(`:q`), not a plugin default.
+
 Requires Neovim 0.12+, Git, and Gitsigns with the documented `attach(ctx)` and `b:gitsigns_status_dict` APIs. Configure Gitsigns before this plugin. No default keymaps, installation hooks, or background processes.
 
 ```lua
