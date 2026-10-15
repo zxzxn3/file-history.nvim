@@ -4,22 +4,29 @@ Browse a file's Git versions in the focused Neovim window, without replacing its
 
 ![Browse file versions and inspect commit details](assets/history-navigation.gif)
 
-`[v` / `]v` browse older / newer versions; `<leader>hl` opens commit details and
-colored diffstat. The demo uses the example mappings below with Space as leader.
-Version labels use the plugin's `label()` helper in the tabline/statusline.
+`[v` / `]v` browse older / newer versions; `<leader>hl` shows commit details and
+colored diffstat. These are example mappings, with Space as leader in the demos.
+Version labels use `label()` in the tabline/statusline.
 
 ![Navigate each side of a diff independently](assets/diff-navigation.gif)
 
-`<leader>hd` opens a diff against HEAD. Navigate each side independently with
-`[v` / `]v`: the demo takes the left side to the oldest version and back to the
-file version before HEAD, then takes the right side to the oldest version and
-back to the working file. The final `Space w q` is a custom window-close mapping
-(`:q`), not a plugin default.
+`<leader>hd` compares against HEAD. Each side can navigate independently, all the
+way to the oldest file version and back. `Space w q` is a custom mapping for
+`:q`, not a plugin default.
 
-Requires Neovim 0.12+, Git, and Gitsigns with the documented `attach(ctx)` and `b:gitsigns_status_dict` APIs. Configure Gitsigns before this plugin. No default keymaps, installation hooks, or background processes.
+## Installation
+
+Requires Neovim 0.12+, Git, and [Gitsigns](https://github.com/lewis6991/gitsigns.nvim)
+with the documented `attach(ctx)` and `b:gitsigns_status_dict` APIs. Configure
+Gitsigns first. This plugin supplies no default mappings or background processes.
+
+### vim.pack
 
 ```lua
-vim.pack.add({ 'https://github.com/lewis6991/gitsigns.nvim', 'https://github.com/zxzxn3/file-history.nvim' })
+vim.pack.add {
+  'https://github.com/lewis6991/gitsigns.nvim',
+  'https://github.com/zxzxn3/file-history.nvim',
+}
 require('gitsigns').setup {}
 require('file-history').setup {}
 vim.keymap.set('n', '[v', function() require('file-history').step(1) end)
@@ -28,23 +35,74 @@ vim.keymap.set('n', '<leader>hl', function() require('file-history').log() end)
 vim.keymap.set('n', '<leader>hd', function() require('file-history').diff() end)
 ```
 
-For lazy.nvim, use `{ 'zxzxn3/file-history.nvim', dependencies = { { 'lewis6991/gitsigns.nvim', opts = {} } }, config = function() require('file-history').setup {} end }`.
+### lazy.nvim
 
-## Options
+```lua
+{
+  'zxzxn3/file-history.nvim',
+  dependencies = { { 'lewis6991/gitsigns.nvim', opts = {} } },
+  config = function() require('file-history').setup {} end,
+}
+```
 
-`setup()` accepts `max_width=100`, `max_height=30`, `show_stat=true`, and `history_signs=true`. Repository identity comes from Gitsigns' public buffer status. For bare repositories, first ensure Gitsigns attaches to the file; an optional helper such as baredot can supply repository context, but is not required by this plugin. No repository list or context callback is needed here. Git subprocesses clear inherited `GIT_*` variables and use the attached repository explicitly. If Gitsigns has not attached yet, navigation asks you to wait.
+Add your mappings separately, for example those shown above.
 
-## Navigation and diff
+## Configuration
 
-Commands: `:FileHistoryOlder`, `:FileHistoryNewer`, `:FileHistoryDiff`, `:FileHistoryLog`. They mirror the Lua functions above.
+All options are optional; these are the defaults:
 
-- Navigation order: working buffer → newest file commit → older file commits.
-- INDEX navigation is not supported.
-- `diff()` delegates to Gitsigns' `diffthis('HEAD')`, opening HEAD on the left and retaining the invoking view on the right. `[v` / `]v` can navigate either side independently. Close either window with `:q`, or use `:diffoff!` to stop diff mode. Closing the worktree side leaves a clearly labeled read-only revision. As with Gitsigns, invoking diff again while already in diff mode does not create another split.
-- Historical signs compare against the next older file commit. Signs are suppressed while presenting a revision in diff mode.
-- `log()` shows metadata, message and colored diffstat. Working files use HEAD.
+```lua
+require('file-history').setup {
+  max_width = 100,       -- Commit popup width, in cells.
+  max_height = 30,       -- Commit popup height, in cells.
+  show_stat = true,     -- Include changed-file statistics in the popup.
+  history_signs = true, -- Compare a revision with the preceding file version.
+}
+```
 
-`label(buffer)` returns a display-only `[revision] filename` label, or nil. Use it in your statusline/tabline formatter; the plugin does not modify those plugins. Read-only revisions cannot be written, but consumers should also disable their own staging/reset shortcuts for buffers with `b:file_history` metadata.
+Gitsigns supplies repository context. For bare repositories, ensure it attaches
+first; a helper such as baredot can provide that context. Navigation asks you to
+wait if attachment is not ready.
 
-Historical buffers are wiped when hidden. Only commits touching the current path are navigated, deletion commits are skipped, and renames are not followed. Repositories must have a HEAD commit; unborn repositories and binary previews are outside the supported scope. `diff()` requires the file to exist in HEAD. Sessions cannot serialize their contents: discard empty `history://` placeholders after session restore, or navigate again to rehydrate them. Async results are ignored after the requesting window changes file/version. Rapid steps invalidate pending requests rather than accumulate a requested step count.
+## Usage
 
+Commands mirror the Lua API: `:FileHistoryOlder`, `:FileHistoryNewer`,
+`:FileHistoryDiff`, and `:FileHistoryLog`.
+
+- Navigation: working buffer → newest file commit → older file commits.
+- Diff: HEAD on the left, the invoking view on the right. Navigate either side
+  independently; `:q` closes a window and `:diffoff!` leaves diff mode. Repeating
+  the diff command does not create another split while already in diff mode.
+- Historical signs compare against the preceding file commit and are suppressed
+  in diff mode. Hidden historical buffers are wiped.
+- Commit details show metadata, message and colored diffstat. From a working
+  file, they describe HEAD.
+
+`require('file-history').label(bufnr)` returns `[revision] filename`, or nil for a
+working buffer. Use it in your own statusline/tabline formatter; the plugin does
+not configure those plugins. Historical views are read-only. If you have custom
+staging/reset mappings, disable them when `vim.b.file_history` is present.
+
+## Scope
+
+- Only commits touching the current path are visited. Deletion commits are
+  skipped; renames are not followed. INDEX navigation is not supported.
+- Repositories need a HEAD commit; diff also requires the file to exist in HEAD.
+  Binary previews are not supported.
+- Sessions do not preserve historical buffer contents. Discard empty
+  `history://` placeholders on restore, or navigate again to reload them.
+- Navigation is asynchronous. Switching file/version or closing the requesting
+  window cancels stale results. Rapid steps replace pending requests rather than
+  queue every keypress.
+
+<details>
+<summary>Validation scope</summary>
+
+Checked with Neovim 0.12.6 and Gitsigns `851a051` using isolated Git repositories,
+including a bare repository with a linked worktree. Checks cover navigation,
+unsaved-buffer preservation, historical signs, independent diff views, stale
+asynchronous results, buffer cleanup, and commit popups. The demos show the
+interactive behavior in Neovide. The lazy.nvim example was reviewed against its
+loading rules but was not run with lazy.nvim.
+
+</details>
