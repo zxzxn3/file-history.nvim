@@ -96,13 +96,10 @@ staging/reset mappings, disable them when `vim.b.file_history` is present.
   queue every keypress.
 
 <details>
-<summary>Validation scope</summary>
+<summary>Tested setup</summary>
 
-Checked with Neovim 0.12.6 and Gitsigns `851a051` using isolated Git repositories,
-including a bare repository with a linked worktree. Checks cover navigation,
-unsaved-buffer preservation, historical signs, independent diff views, stale
-asynchronous results, buffer cleanup, and commit popups. The demos show the
-interactive behavior in Neovide. The lazy.nvim example was reviewed against its
-loading rules but was not run with lazy.nvim.
+Used daily in Neovide. Tested with Neovim 0.12.6 and Gitsigns, using both
+vim.pack and lazy.nvim. Checks cover history navigation, independent diff views,
+unsaved edits, linked worktrees, and file-history edge cases.
 
 </details>
